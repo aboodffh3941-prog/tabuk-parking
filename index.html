@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام مواقف جامعة تبوك الذكي</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; }
+        body { background-color: #f4f6f9; color: #333; }
+        
+        /* الهيدر الرسمي */
+        header { background-color: #004a87; color: white; padding: 1.5rem; text-align: center; box-shadow: 0 2px 10px rgba(0,0,0,0.15); border-bottom: 4px solid #28a745; }
+        header h1 { font-size: 1.8rem; margin-bottom: 5px; }
+        header p { font-size: 0.95rem; color: #e0e0e0; }
+
+        /* شريط الإحصائيات */
+        .stats-bar { display: flex; justify-content: space-around; background: white; padding: 15px; margin: 20px auto; max-width: 1200px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); text-align: center; }
+        .stat-box h3 { font-size: 1.6rem; color: #004a87; }
+        .stat-box p { font-size: 0.85rem; color: #666; font-weight: bold; }
+
+        /* شريط البحث والفلترة */
+        .controls-bar { display: flex; gap: 10px; max-width: 1200px; margin: 0 auto 15px; padding: 0 20px; }
+        .controls-bar input, .controls-bar select { padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 0.95rem; outline: none; flex: 1; }
+        .controls-bar input:focus, .controls-bar select:focus { border-color: #004a87; }
+
+        .container { display: flex; flex-wrap: wrap; padding: 0 20px 20px; gap: 20px; max-width: 1200px; margin: 0 auto; }
+        #map { height: 550px; flex: 2; min-width: 300px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border: 2px solid #fff; }
+        .sidebar { flex: 1; min-width: 320px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); height: 550px; overflow-y: auto; }
+        .sidebar h2 { font-size: 1.1rem; margin-bottom: 15px; color: #004a87; border-bottom: 2px solid #eef2f5; padding-bottom: 8px; }
+        
+        /* كروت المواقف */
+        .parking-item { padding: 15px; margin-bottom: 12px; border-radius: 8px; border-right: 6px solid #ccc; background: #fafafa; transition: 0.2s; cursor: pointer; }
+        .parking-item:hover { background: #f0f4f8; transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.05); }
+        .parking-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .parking-title { font-weight: bold; color: #333; font-size: 0.95rem; }
+        
+        .status-available { border-right-color: #28a745; }
+        .status-busy { border-right-color: #ffc107; }
+        .status-full { border-right-color: #dc3545; }
+        
+        .badge { padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; color: white; font-weight: bold; }
+        .bg-available { background-color: #28a745; }
+        .bg-busy { background-color: #ffc107; color: #333; }
+        .bg-full { background-color: #dc3545; }
+        
+        .parking-details { font-size: 0.85rem; color: #555; margin-bottom: 10px; }
+        .peak-time { font-size: 0.8rem; color: #d35400; background: #fdebd0; padding: 3px 6px; border-radius: 4px; display: inline-block; margin-bottom: 10px; }
+        
+        /* الأزرار التفاعلية */
+        .actions { display: flex; gap: 8px; }
+        .btn { flex: 1; padding: 8px; text-align: center; border-radius: 5px; font-size: 0.85rem; font-weight: bold; cursor: pointer; border: none; text-decoration: none; color: white; transition: 0.2s; }
+        .btn-nav { background-color: #004a87; }
+        .btn-nav:hover { background-color: #00335e; }
+        .btn-report { background-color: #dc3545; }
+        .btn-report:hover { background-color: #b02a37; }
+
+        /* نافذة البلاغ (Modal) */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
+        .modal-content { background: white; padding: 25px; border-radius: 12px; width: 90%; max-width: 400px; text-align: center; }
+        .modal-content h3 { color: #dc3545; margin-bottom: 15px; }
+        .modal-content textarea { width: 100%; height: 100px; padding: 10px; margin-bottom: 15px; border-radius: 6px; border: 1px solid #ccc; font-family: inherit; }
+        .modal-buttons { display: flex; gap: 10px; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>نظام المواقف الذكية - جامعة تبوك</h1>
+        <p>بوابة الاستعلام والملاحة المباشرة للمواقف الجامعية</p>
+    </header>
+
+    <div class="stats-bar">
+        <div class="stat-box">
+            <h3 id="total-spots">0</h3>
+            <p>السعة الإجمالية</p>
+        </div>
+        <div class="stat-box">
+            <h3 id="available-spots" style="color: #28a745;">0</h3>
+            <p>المواقف الشاغرة</p>
+        </div>
+        <div class="stat-box">
+            <h3 id="occupancy-rate" style="color: #ffc107;">0%</h3>
+            <p>نسبة الإشغال</p>
+        </div>
+    </div>
+
+    <!-- شريط البحث والفلترة -->
+    <div class="controls-bar">
+        <input type="text" id="searchInput" placeholder="ابحث عن اسم الكلية أو المبنى...">
+        <select id="categoryFilter">
+            <option value="all">جميع الفئات</option>
+            <option value="student">مواقف الطلاب</option>
+            <option value="staff">أعضاء هيئة التدريس</option>
+            <option value="handicap">ذوي الاحتياجات الخاصة</option>
+        </select>
+    </div>
+
+    <div class="container">
+        <div id="map"></div>
+        <div class="sidebar">
+            <h2>قائمة المواقف</h2>
+            <div id="parking-list"></div>
+        </div>
+    </div>
+
+    <!-- نافذة الإبلاغ عن مخالفة -->
+    <div class="modal" id="reportModal">
+        <div class="modal-content">
+            <h3>الإبلاغ عن مخالفة مرورية</h3>
+            <p style="font-size: 0.9rem; margin-bottom: 10px; color:#555;">يرجى كتابة رقم اللوحة أو وصف المشكلة (مثل وقوف خاطئ، إغلاق مسار):</p>
+            <textarea id="reportText" placeholder="اكتب تفاصيل المخالفة هنا..."></textarea>
+            <div class="modal-buttons">
+                <button class="btn btn-report" onclick="submitReport()">إرسال البلاغ للأمن</button>
+                <button class="btn" style="background:#6c757d;" onclick="closeModal()">إلغاء</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const utLatitude = 28.3837;
+        const utLongitude = 36.4782;
+        const map = L.map('map').setView([utLatitude, utLongitude], 16);
+
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Tiles &copy; Esri'
+        }).addTo(map);
+
+        let markersLayer = L.layerGroup().addTo(map);
+
+        // قاعدة البيانات الموسعة
+        const parkingsData = [
+            { id: 1, name: "مواقف كلية الحاسب وإدارة الأعمال", lat: 28.3852, lng: 36.4761, total: 120, spotsLeft: 42, category: "student", peak: "الذروة: 9:00 ص - 11:00 ص" },
+            { id: 2, name: "مواقف كلية الهندسة والعلوم", lat: 28.3868, lng: 36.4789, total: 150, spotsLeft: 18, category: "student", peak: "الذروة: 10:00 ص - 12:00 م" },
+            { id: 3, name: "مواقف المبنى الرئيسي والإدارة", lat: 28.3821, lng: 36.4768, total: 80, spotsLeft: 4, category: "staff", peak: "الذروة: 8:00 ص - 2:00 م" },
+            { id: 4, name: "مواقف المجمع الطبي", lat: 28.3812, lng: 36.4815, total: 200, spotsLeft: 95, category: "student", peak: "الذروة: 9:00 ص - 1:00 م" },
+            { id: 5, name: "مواقف المكتبة المركزية (ذوي الإعاقة)", lat: 28.3835, lng: 36.4800, total: 20, spotsLeft: 15, category: "handicap", peak: "متاح غالباً" }
+        ];
+
+        function renderParkings() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const filterCategory = document.getElementById('categoryFilter').value;
+            const container = document.getElementById('parking-list');
+            
+            container.innerHTML = '';
+            markersLayer.clearLayers();
+
+            let grandTotal = 0;
+            let grandAvailable = 0;
+
+            const filteredData = parkingsData.filter(p => {
+                const matchesSearch = p.name.toLowerCase().includes(searchTerm);
+                const matchesCategory = filterCategory === 'all' || p.category === filterCategory;
+                return matchesSearch && matchesCategory;
+            });
+
+            filteredData.forEach(parking => {
+                grandTotal += parking.total;
+                grandAvailable += parking.spotsLeft;
+
+                let statusText = "متوفر";
+                let badgeClass = 'bg-available';
+                let borderClass = 'status-available';
+                const percentageLeft = (parking.spotsLeft / parking.total) * 100;
+
+                if (parking.spotsLeft === 0) {
+                    statusText = "ممتلئ"; badgeClass = 'bg-full'; borderClass = 'status-full';
+                } else if (percentageLeft < 15) {
+                    statusText = "مكتظ جداً"; badgeClass = 'bg-busy'; borderClass = 'status-busy';
+                }
+
+                // علامة الخريطة
+                const marker = L.marker([parking.lat, parking.lng]).addTo(markersLayer);
+                marker.bindPopup(`<b>${parking.name}</b><br>الشاغر: ${parking.spotsLeft} / ${parking.total}`);
+
+                // توليد رابط خرائط قوقل
+                const googleMapsLink = `https://www.google.com/maps/dir/?api=1&destination=${parking.lat},${parking.lng}`;
+
+                // كرت القائمة الجانبية
+                const item = document.createElement('div');
+                item.className = `parking-item ${borderClass}`;
+                item.innerHTML = `
+                    <div class="parking-header">
+                        <span class="parking-title">${parking.name}</span>
+                        <span class="badge ${badgeClass}">${statusText}</span>
+                    </div>
+                    <div class="peak-time"><small>⏰ ${parking.peak}</small></div>
+                    <div class="parking-details">الشاغر: <b>${parking.spotsLeft}</b> من أصل ${parking.total}</div>
+                    <div class="actions">
+                        <a href="${googleMapsLink}" target="_blank" class="btn btn-nav" onclick="event.stopPropagation()">📍 توجيه للموقف</a>
+                        <button class="btn btn-report" onclick="openModal(event)">⚠️ بلاغ</button>
+                    </div>
+                `;
+
+                // التكبير عند الضغط على الكرت (في مكان فارغ)
+                item.addEventListener('click', () => {
+                    map.flyTo([parking.lat, parking.lng], 18, { duration: 1 });
+                    marker.openPopup();
+                });
+
+                container.appendChild(item);
+            });
+
+            // تحديث الإحصائيات
+            document.getElementById('total-spots').innerText = grandTotal;
+            document.getElementById('available-spots').innerText = grandAvailable;
+            const occupancy = grandTotal > 0 ? Math.round(((grandTotal - grandAvailable) / grandTotal) * 100) : 0;
+            document.getElementById('occupancy-rate').innerText = occupancy + "%";
+        }
+
+        // أحداث البحث والفلترة
+        document.getElementById('searchInput').addEventListener('input', renderParkings);
+        document.getElementById('categoryFilter').addEventListener('change', renderParkings);
+
+        // وظائف نافذة البلاغات
+        const modal = document.getElementById('reportModal');
+        function openModal(e) {
+            e.stopPropagation(); // منع تكبير الخريطة عند الضغط على زر البلاغ
+            modal.style.display = 'flex';
+        }
+        function closeModal() {
+            modal.style.display = 'none';
+            document.getElementById('reportText').value = '';
+        }
+        function submitReport() {
+            const text = document.getElementById('reportText').value;
+            if(text.trim() === '') {
+                alert("الرجاء كتابة تفاصيل البلاغ أولاً.");
+                return;
+            }
+            alert("تم إرسال البلاغ بنجاح إلى إدارة الأمن والسلامة بالجامعة.");
+            closeModal();
+        }
+
+        // عرض المواقف عند أول تحميل للصفحة
+        renderParkings();
+    </script>
+</body>
+</html>
